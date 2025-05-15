@@ -16,8 +16,9 @@ SOCKET_PATH = "/tmp/mpv-socket"
 GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22
 T_GAP = 0.10  # röle geçiş tamponu
 
-relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=True)
-relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)
+relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)  # Açık başlasın
+relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)   # Kapalı başlasın
+
 pir    = DigitalInputDevice(GPIO_SENSOR, pull_up=False)
 
 mpv_proc = None
