@@ -12,13 +12,15 @@ VIDEO_EVT  = BASE / "video2.mp4"
 MPV = "/usr/bin/mpv"
 SOCKET_PATH = "/tmp/mpv-socket"
 
-GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22
-T_GAP = 0.10                   # röle geçiş tamponu (sn)
+GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22      # BCM numaraları
+T_GAP = 0.10                                    # röle geçiş tamponu (sn)
 
 # Röleler aktif-LOW
-relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)  # LOW = çekik
-relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)   # HIGH = serbest
-pir    = DigitalInputDevice(GPIO_SENSOR, pull_up=False, bounce_time=0.1)
+relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)  # LOW = çekik (açık)
+relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)   # HIGH = serbest (kapalı)
+
+# PIR: “hareket yok = HIGH”, “hareket var = LOW”
+pir = DigitalInputDevice(GPIO_SENSOR, pull_up=False)  # bounce süzgeci gerekmez
 
 mpv_proc = None
 playing_evt = False
@@ -64,8 +66,9 @@ def mpv_quit():
 def duration(path: Path) -> float:
     try:
         out = subprocess.check_output(
-            ["ffprobe", "-v", "error", "-show_entries",
-             "format=duration", "-of", "json", str(path)],
+            ["ffprobe", "-v", "error",
+             "-show_entries", "format=duration",
+             "-of", "json", str(path)],
             text=True)
         return float(json.loads(out)["format"]["duration"])
     except Exception:
@@ -75,14 +78,14 @@ LEN_EVT = duration(VIDEO_EVT)
 
 # ─── Röle geçişi ───
 def switch_relays(active: str):
-    if active == "R1":
+    if active == "R1":                               # video-1 süresince
         relay2.off(); time.sleep(T_GAP); relay1.on()
-    else:
+    else:                                            # video-2 + 10 sn
         relay1.off(); time.sleep(T_GAP); relay2.on()
 
 # ─── Senaryo akışı ───
 def idle_mode():
-    switch_relays("R1")
+    switch_relays("R1")              # R1 LOW, R2 HIGH
     mpv_load(VIDEO_IDLE, loop=True)
 
 def event_sequence():
@@ -93,20 +96,23 @@ def event_sequence():
         playing_evt = True
 
     mpv_load(VIDEO_EVT, loop=False)
-    time.sleep(LEN_EVT)
+    time.sleep(LEN_EVT)              # video-2 süresi
 
-    switch_relays("R2")
-    time.sleep(10)
+    switch_relays("R2")              # R2 LOW
+    time.sleep(10)                   # 10 sn röle-2
 
-    idle_mode()
+    idle_mode()                      # tekrar döngü
     with lock:
         playing_evt = False
 
-# ─── Sensör izleme (sürekli HIGH denetimi) ───
+# ─── Sensör izleme ───
 def sensor_loop():
     while True:
-        if pir.is_active and not playing_evt:          # HIGH + sistem boşta
+        if (not pir.is_active) and (not playing_evt):   # LOW = hareket var
             threading.Thread(target=event_sequence, daemon=True).start()
+            # kişi sensör alanındayken yeniden tetikleme yapma
+            while not pir.is_active:
+                time.sleep(0.1)
         time.sleep(0.05)
 
 # ─── Temiz çıkış ───
