@@ -105,8 +105,12 @@ def event_sequence():
 # ─── Sensör izleme ───
 def sensor_loop():
     while True:
-        if pir.value == 1 and not playing_evt:
-            threading.Thread(target=event_sequence, daemon=True).start()
+        if pir.is_active:
+            if not playing_evt:
+                threading.Thread(target=event_sequence, daemon=True).start()
+            # 🧠 Bir kere tetikledikten sonra kişi sensör önünden çekilene kadar bekle
+            while pir.is_active:
+                time.sleep(0.1)
         time.sleep(0.05)
 
 # ─── Çıkışta temizle ───
