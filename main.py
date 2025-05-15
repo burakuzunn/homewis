@@ -107,13 +107,11 @@ def event_sequence():
 
 # ─── Sensör izleme ───
 def sensor_loop():
-    last = pir.value
     while True:
-        cur = pir.value
-        if cur and not last:
+        if pir.value and not playing_evt:
             threading.Thread(target=event_sequence, daemon=True).start()
-        last = cur
         time.sleep(0.05)
+
 
 # ─── Çıkışta temizle ───
 def clean_exit():
