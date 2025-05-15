@@ -9,10 +9,11 @@ from gpiozero import DigitalInputDevice, DigitalOutputDevice
 BASE_PATH   = Path("/home/cmos/Desktop")
 VIDEO_IDLE  = BASE_PATH / "video1.mp4"
 VIDEO_EVT   = BASE_PATH / "video2.mp4"
-MPV_CMD     = "/usr/bin/mpv"  # Genellikle Raspberry Pi'de mpv bu dizindedir
+MPV_CMD     = "/usr/bin/mpv"  # mpv yolu
 
 SENSOR_PIN  = 17
-RELAY_PIN   = 27
+RELAY1_PIN  = 27  # Röle 1 – video1 oynarken açık
+RELAY2_PIN  = 22  # Röle 2 – video2 bittikten sonra 10 sn açık
 
 LOOP_ARGS = ["--loop", "--fullscreen", "--no-border",
              "--ontop", "--really-quiet", "--force-window=yes"]
@@ -26,8 +27,9 @@ state_lock  = threading.Lock()
 playing_evt = False
 
 # Röle ve Sensör başlat
-relay = DigitalOutputDevice(RELAY_PIN, active_high=True, initial_value=False)
-pir   = DigitalInputDevice(SENSOR_PIN, pull_up=False)
+relay1 = DigitalOutputDevice(RELAY1_PIN, active_high=True, initial_value=False)
+relay2 = DigitalOutputDevice(RELAY2_PIN, active_high=True, initial_value=False)
+pir    = DigitalInputDevice(SENSOR_PIN, pull_up=False)
 
 # ▶ mpv video oynatıcı başlat
 def start_mpv(video: Path, loop: bool):
@@ -54,12 +56,14 @@ def stop_mpv():
             mpv_proc.kill()
     mpv_proc = None
 
-# ▶ Bekleme videosu
+# ▶ Bekleme videosu + röle1 açık
 def play_idle():
-    status.set("🟢 Bekleme: video1.mp4 döngüde")
+    status.set("🟢 Bekleme: video1.mp4 döngüde, Röle1 açık")
+    relay2.off()  # Her ihtimale karşı
+    relay1.on()
     start_mpv(VIDEO_IDLE, loop=True)
 
-# ▶ Olay videosu ve röle tetikleme
+# ▶ Olay videosu + röle2 süreci
 def handle_event():
     global playing_evt
     with state_lock:
@@ -67,18 +71,25 @@ def handle_event():
             return
         playing_evt = True
 
-    status.set("🔴 Hareket: video2.mp4 oynatılıyor")
-    start_mpv(VIDEO_EVT, loop=False)
+    # Röle1'i kapat, video1'i durdur
+    status.set("🔄 Geçiş: Röle1 kapatılıyor")
+    relay1.off()
+    stop_mpv()
 
+    # Video2 oynat
+    status.set("🔴 Hareket algılandı: video2.mp4 oynatılıyor")
+    start_mpv(VIDEO_EVT, loop=False)
     if mpv_proc:
         mpv_proc.wait()
 
-    status.set("⚡ Röle ON (10 s)")
-    relay.on()
+    # Röle2'yi 10 sn çalıştır
+    status.set("⚡ Röle2 ON (10 sn)")
+    relay2.on()
     time.sleep(10)
-    relay.off()
-    status.set("⚡ Röle OFF")
+    relay2.off()
+    status.set("⚡ Röle2 OFF")
 
+    # Başa dön
     play_idle()
     with state_lock:
         playing_evt = False
@@ -101,13 +112,16 @@ status = tk.StringVar(value="⏳ Başlatılıyor…")
 tk.Label(root, textvariable=status,
          font=("DejaVu Sans", 16), fg="white", bg="black").pack(pady=30)
 
-# Başlangıç videoyu başlat
+# Başlangıçta video1 ve röle1 aktif
 play_idle()
-# Sensör dinleyicisini başlat
+
+# Sensör izleyici başlat
 threading.Thread(target=sensor_watcher, daemon=True).start()
 
 def on_close():
     stop_mpv()
+    relay1.off()
+    relay2.off()
     root.destroy()
 
 root.protocol("WM_DELETE_WINDOW", on_close)
