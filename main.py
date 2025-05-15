@@ -7,13 +7,13 @@ from gpiozero import DigitalInputDevice, DigitalOutputDevice
 
 # ───── Dosya ve PIN Ayarları ─────
 BASE_PATH   = Path("/home/cmos/Desktop")
-VIDEO_IDLE  = BASE_PATH / "video1.mp4"   # Cisim yokken döngü
-VIDEO_EVT   = BASE_PATH / "video2.mp4"   # Cisim algılanınca bir kez
+VIDEO_IDLE  = BASE_PATH / "video1.mp4"
+VIDEO_EVT   = BASE_PATH / "video2.mp4"
 MPV_CMD     = "/usr/bin/mpv"
 
-SENSOR_PIN  = 17      # IR sensör OUT
-RELAY1_PIN  = 27      # Röle-1: video-1 süresince açık
-RELAY2_PIN  = 22      # Röle-2: video-2 bitince 10 sn açık
+SENSOR_PIN  = 17
+RELAY1_PIN  = 27
+RELAY2_PIN  = 22
 
 LOOP_ARGS = ["--loop", "--fullscreen", "--no-border",
              "--ontop", "--really-quiet", "--force-window=yes"]
@@ -84,17 +84,17 @@ def handle_event():
     relay2.off()
     status.set("⚡ Röle2 KAPALI")
 
-    time.sleep(0.2)               # röle tamponu
+    time.sleep(0.2)               # tampon
     play_idle()
     with lock:
         playing_evt = False
 
-# ▶ Sensör döngüsü (kenar tetiklemeli)
+# ▶ Sensör döngüsü
 def sensor_watcher():
     last = False
     while True:
-        cur = pir.value           # 1 = cisim var
-        if cur and not last:      # LOW→HIGH kenarı
+        cur = pir.value
+        if cur and not last:                      # kenar tetikleme
             threading.Thread(target=handle_event, daemon=True).start()
         last = cur
         time.sleep(0.05)
@@ -110,13 +110,15 @@ status = tk.StringVar(value="⏳ Başlatılıyor…")
 tk.Label(root, textvariable=status,
          font=("DejaVu Sans", 16), fg="white", bg="black").pack(pady=30)
 
-play_idle()
-threading.Thread(target=sensor_watcher, daemon=True).start()
-
+# Escape tuşu → uygulamayı kapat
 def on_close():
     stop_mpv()
     relay1.off(); relay2.off()
     root.destroy()
 
+root.bind("<Escape>", lambda e: on_close())
 root.protocol("WM_DELETE_WINDOW", on_close)
+
+play_idle()
+threading.Thread(target=sensor_watcher, daemon=True).start()
 root.mainloop()
