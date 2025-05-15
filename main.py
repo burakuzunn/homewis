@@ -16,9 +16,8 @@ SOCKET_PATH = "/tmp/mpv-socket"
 GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22
 T_GAP = 0.10  # röle geçiş tamponu
 
-relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)  # Açık başlasın
-relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)   # Kapalı başlasın
-
+relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)
+relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)
 pir    = DigitalInputDevice(GPIO_SENSOR, pull_up=False)
 
 mpv_proc = None
@@ -37,13 +36,11 @@ def mpv_start():
         "--loop", "--really-quiet", "--idle=yes"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # 🕓 Socket dosyası hazır olana kadar bekle (maks 3 sn)
     for _ in range(30):
         if os.path.exists(SOCKET_PATH):
             return
         time.sleep(0.1)
     print("[mpv_start] Uyarı: mpv socket oluşmadı.")
-
 
 def mpv_send(command: dict):
     try:
@@ -58,7 +55,7 @@ def mpv_loadfile(path: Path, loop=False):
     mpv_send({ "command": ["set_property", "pause", False] })
     mpv_send({ "command": ["set_property", "loop", "inf" if loop else "no"] })
     if not loop:
-        mpv_send({ "command": ["set_property", "keep-open", "yes"] })  # 👈 bu eklendi
+        mpv_send({ "command": ["set_property", "keep-open", "yes"] })
 
 def mpv_quit():
     mpv_send({ "command": ["quit"] })
@@ -108,10 +105,9 @@ def event_sequence():
 # ─── Sensör izleme ───
 def sensor_loop():
     while True:
-        if pir.value and not playing_evt:
+        if pir.value == 1 and not playing_evt:
             threading.Thread(target=event_sequence, daemon=True).start()
         time.sleep(0.05)
-
 
 # ─── Çıkışta temizle ───
 def clean_exit():
@@ -129,7 +125,7 @@ mpv_start()
 threading.Thread(target=sensor_loop, daemon=True).start()
 idle_mode()
 
-# Arka planda sadece ESC yakalamak istersen:
+# ESC ile çıkış
 try:
     import tkinter as tk
     root = tk.Tk()
