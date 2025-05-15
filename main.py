@@ -1,30 +1,58 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import subprocess, threading, time, json, tkinter as tk
+import subprocess, threading, time, json, os
 from pathlib import Path
 from gpiozero import DigitalInputDevice, DigitalOutputDevice
+import socket, atexit
 
-# ─── Dosyalar & GPIO ───
+# ─── Ayarlar ───
 BASE = Path("/home/cmos/Desktop")
 VIDEO_IDLE = BASE / "video1.mp4"
 VIDEO_EVT  = BASE / "video2.mp4"
 MPV = "/usr/bin/mpv"
+SOCKET_PATH = "/tmp/mpv-socket"
 
 GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22
 T_GAP = 0.10  # röle geçiş tamponu
 
-# Röleler aktif-LOW (LOW = çalışıyor)
 relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=True)
 relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)
 pir    = DigitalInputDevice(GPIO_SENSOR, pull_up=False)
 
-LOOP_ARGS = ["--loop", "--fullscreen", "--no-border", "--ontop", "--really-quiet", "--force-window=yes"]
-ONCE_ARGS = ["--fullscreen", "--no-border", "--ontop", "--really-quiet", "--keep-open=always", "--force-window=yes"]
-
 mpv_proc = None
 lock = threading.Lock()
 playing_evt = False
+
+# ─── mpv kontrolü ───
+def mpv_start():
+    global mpv_proc
+    if os.path.exists(SOCKET_PATH):
+        os.remove(SOCKET_PATH)
+    mpv_proc = subprocess.Popen([
+        MPV, str(VIDEO_IDLE), "--input-ipc-server=" + SOCKET_PATH,
+        "--fullscreen", "--no-border", "--ontop", "--force-window=yes",
+        "--loop", "--really-quiet"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def mpv_send(command: dict):
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.connect(SOCKET_PATH)
+            client.sendall((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"[mpv_send] Hata: {e}")
+
+def mpv_loadfile(path: Path, loop=False):
+    mpv_send({
+        "command": ["loadfile", str(path), "replace"]
+    })
+    mpv_send({
+        "command": ["set_property", "loop", "inf" if loop else "no"]
+    })
+
+def mpv_quit():
+    mpv_send({ "command": ["quit"] })
 
 # ─── video süresi ───
 def video_len(path: Path) -> float:
@@ -38,35 +66,17 @@ def video_len(path: Path) -> float:
 
 LEN_EVT = video_len(VIDEO_EVT)
 
-# ─── mpv kontrolü ───
-def mpv_start(path: Path, loop: bool):
-    global mpv_proc
-    mpv_stop()
-    args = LOOP_ARGS if loop else ONCE_ARGS
-    mpv_proc = subprocess.Popen([MPV, str(path), *args],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def mpv_stop():
-    global mpv_proc
-    if mpv_proc and mpv_proc.poll() is None:
-        mpv_proc.terminate()
-        try:
-            mpv_proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            mpv_proc.kill()
-    mpv_proc = None
-
-# ─── Röle kontrolü ───
+# ─── Röle geçişi ───
 def switch_relays(active: str):
     if active == 'R1':
         relay2.off(); time.sleep(T_GAP); relay1.on()
     else:
         relay1.off(); time.sleep(T_GAP); relay2.on()
 
-# ─── video1 döngü modu ───
+# ─── video1 döngüsü ───
 def idle_mode():
     switch_relays('R1')
-    mpv_start(VIDEO_IDLE, loop=True)
+    mpv_loadfile(VIDEO_IDLE, loop=True)
 
 # ─── video2 + 10 sn röle2 modu ───
 def event_sequence():
@@ -76,8 +86,7 @@ def event_sequence():
             return
         playing_evt = True
 
-    mpv_stop()
-    mpv_start(VIDEO_EVT, loop=False)
+    mpv_loadfile(VIDEO_EVT, loop=False)
     time.sleep(LEN_EVT)
 
     switch_relays('R2')
@@ -97,20 +106,28 @@ def sensor_loop():
         last = cur
         time.sleep(0.05)
 
-# ─── Tkinter (gizli ESC dinleyici) ───
-root = tk.Tk()
-root.withdraw()  # pencereyi gizle
+# ─── Çıkışta temizle ───
+def clean_exit():
+    try:
+        relay1.off(); relay2.off()
+        mpv_quit()
+        if os.path.exists(SOCKET_PATH):
+            os.remove(SOCKET_PATH)
+    except: pass
 
-def clean_exit(*_):
-    mpv_stop()
-    relay1.off()
-    relay2.off()
-    root.destroy()
-
-root.bind("<Escape>", clean_exit)
-root.protocol("WM_DELETE_WINDOW", clean_exit)
+atexit.register(clean_exit)
 
 # ─── Başlat ───
+mpv_start()
 threading.Thread(target=sensor_loop, daemon=True).start()
 idle_mode()
-root.mainloop()
+
+# Arka planda sadece ESC yakalamak istersen:
+try:
+    import tkinter as tk
+    root = tk.Tk()
+    root.withdraw()
+    root.bind("<Escape>", lambda *_: exit(0))
+    root.mainloop()
+except:
+    while True: time.sleep(1)
