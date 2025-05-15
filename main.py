@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import subprocess, threading, time, tkinter as tk, json
+import subprocess, threading, time, json, tkinter as tk
 from pathlib import Path
 from gpiozero import DigitalInputDevice, DigitalOutputDevice
 
@@ -10,11 +10,11 @@ BASE = Path("/home/cmos/Desktop")
 VIDEO_IDLE, VIDEO_EVT = BASE / "video1.mp4", BASE / "video2.mp4"
 MPV = "/usr/bin/mpv"
 
-GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22    # pin numaraları (BCM)
-T_GAP = 0.10                                   # röle geçiş tamponu (sn)
+GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22
+T_GAP = 0.10  # röle geçiş tamponu
 
-# Röleler aktif-LOW  (LOW = çekik)
-relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=True)  # HIGH = serbest
+# Röleler aktif-LOW
+relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=True)
 relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)
 pir    = DigitalInputDevice(GPIO_SENSOR, pull_up=False)
 
@@ -22,11 +22,9 @@ LOOP_ARGS = ["--loop", "--fullscreen", "--no-border", "--ontop", "--really-quiet
 ONCE_ARGS = ["--fullscreen", "--no-border", "--ontop", "--really-quiet",
              "--keep-open=always", "--force-window=yes"]
 
-status = None
 mpv_proc = None
 lock, playing_evt = threading.Lock(), False
 
-# ─── video-2 süresi (sn) ───
 def video_len(path: Path) -> float:
     try:
         meta = subprocess.check_output(
@@ -38,7 +36,7 @@ def video_len(path: Path) -> float:
 
 LEN_EVT = video_len(VIDEO_EVT)
 
-# ─── mpv yardımcıları ───
+# ─── mpv helpers ───
 def mpv_start(path: Path, loop: bool):
     global mpv_proc
     mpv_stop()
@@ -57,48 +55,38 @@ def mpv_stop():
     mpv_proc = None
 
 # ─── Röle değiştirme ───
-def switch_relays(new_active: str):
-    """new_active: 'R1' veya 'R2'"""
-    if new_active == 'R1':
-        relay2.off()             # R2 HIGH (pasif)
-        time.sleep(T_GAP)
-        relay1.on()              # R1 LOW (aktif)
-    else:  # 'R2'
-        relay1.off()             # R1 HIGH
-        time.sleep(T_GAP)
-        relay2.on()              # R2 LOW
+def switch_relays(active: str):
+    if active == 'R1':
+        relay2.off(); time.sleep(T_GAP); relay1.on()
+    else:
+        relay1.off(); time.sleep(T_GAP); relay2.on()
 
-# ─── video-1 döngü modu ───
+# ─── video-1 döngü ───
 def idle_mode():
+    print("→ idle: R1 LOW, R2 HIGH")
     switch_relays('R1')
-    status.set("🟢 video1 döngüde — R1 LOW, R2 HIGH")
     mpv_start(VIDEO_IDLE, loop=True)
 
-# ─── video-2 + 10 s sekansı ───
+# ─── video-2 + 10 s ───
 def event_sequence():
     global playing_evt
     with lock:
-        if playing_evt:
-            return
+        if playing_evt: return
         playing_evt = True
 
-    # video-2 sırasında R1 LOW kalacak
-    status.set("🔴 video2 oynuyor — R1 LOW, R2 HIGH")
-    mpv_stop()
-    mpv_start(VIDEO_EVT, loop=False)
-    time.sleep(LEN_EVT)          # video-2 uzunluğu
+    print("→ event: video-2 başlıyor")
+    mpv_stop(); mpv_start(VIDEO_EVT, loop=False)
+    time.sleep(LEN_EVT)
 
-    # 10 s boyunca R2 LOW, R1 HIGH
+    print("→ R2 LOW (10 s)")
     switch_relays('R2')
-    status.set("⚡ R2 LOW (10 s)")
     time.sleep(10)
 
-    # Döngüye dön
     idle_mode()
     with lock:
         playing_evt = False
 
-# ─── Sensör kenar tetikleme ───
+# ─── sensör izle ───
 def sensor_loop():
     last = pir.value
     while True:
@@ -108,24 +96,13 @@ def sensor_loop():
         last = cur
         time.sleep(0.05)
 
-# ─── Tkinter GUI ───
-root = tk.Tk()
-root.configure(bg="black")
-root.attributes("-fullscreen", True, "-topmost", True)
-root.title("Video + Röle Kontrol")
-
-status = tk.StringVar(value="⏳ Başlatılıyor…")
-tk.Label(root, textvariable=status, font=("DejaVu Sans", 16),
-         fg="white", bg="black").pack(pady=30)
+# ─── Gizli Tk penceresi (sadece ESC yakalamak için) ───
+root = tk.Tk(); root.withdraw()   # pencere gizli
 
 def clean_exit(*_):
-    mpv_stop()
-    relay1.off(); relay2.off()
-    root.destroy()
+    mpv_stop(); relay1.off(); relay2.off(); root.destroy()
 
 root.bind("<Escape>", clean_exit)
-root.protocol("WM_DELETE_WINDOW", clean_exit)
-
-idle_mode()
 threading.Thread(target=sensor_loop, daemon=True).start()
+idle_mode()
 root.mainloop()
