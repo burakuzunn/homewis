@@ -34,8 +34,16 @@ def mpv_start():
         MPV, str(VIDEO_IDLE),
         "--input-ipc-server=" + SOCKET_PATH,
         "--fullscreen", "--no-border", "--ontop", "--force-window=yes",
-        "--loop", "--really-quiet", "--idle=yes"  # 👈 önemli eklendi
+        "--loop", "--really-quiet", "--idle=yes"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # 🕓 Socket dosyası hazır olana kadar bekle (maks 3 sn)
+    for _ in range(30):
+        if os.path.exists(SOCKET_PATH):
+            return
+        time.sleep(0.1)
+    print("[mpv_start] Uyarı: mpv socket oluşmadı.")
+
 
 def mpv_send(command: dict):
     try:
