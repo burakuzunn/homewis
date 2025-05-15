@@ -48,8 +48,12 @@ def mpv_loadfile(path: Path, loop=False):
         "command": ["loadfile", str(path), "replace"]
     })
     mpv_send({
+        "command": ["set_property", "pause", False]
+    })
+    mpv_send({
         "command": ["set_property", "loop", "inf" if loop else "no"]
     })
+
 
 def mpv_quit():
     mpv_send({ "command": ["quit"] })
