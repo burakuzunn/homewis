@@ -17,8 +17,10 @@ RELAY2_PIN  = 22
 
 LOOP_ARGS = ["--loop", "--fullscreen", "--no-border",
              "--ontop", "--really-quiet", "--force-window=yes"]
-ONCE_ARGS = ["--no-loop", "--fullscreen", "--no-border",
-             "--ontop", "--really-quiet", "--force-window=yes"]
+
+# ❗ video2 için — son kare ekranda kalsın
+ONCE_ARGS = ["--fullscreen", "--no-border", "--ontop",
+             "--really-quiet", "--pause", "--keep-open=always", "--force-window=yes"]
 
 # ───── Global Durumlar ─────
 status      = None
@@ -59,6 +61,7 @@ def stop_mpv():
 def play_idle():
     status.set("🟢 video1.mp4 döngüde — Röle1 AÇIK")
     relay2.off()
+    time.sleep(0.2)  # Röle çakışmasını engelle
     relay1.on()
     start_mpv(VIDEO_IDLE, loop=True)
 
@@ -70,13 +73,16 @@ def handle_event():
             return
         playing_evt = True
 
+    # Röle1 kapatılır → ardından video1 durdurulur
+    status.set("⏸ Röle1 kapatılıyor")
     relay1.off()
+    time.sleep(0.2)
     stop_mpv()
 
     status.set("🔴 Cisim algılandı — video2.mp4 oynuyor")
     start_mpv(VIDEO_EVT, loop=False)
     if mpv_proc:
-        mpv_proc.wait()           # video2 bitti, son kare ekranda
+        mpv_proc.wait()  # video2 biter ama pencere açık kalır
 
     status.set("⚡ Röle2 AÇIK (10 sn)")
     relay2.on()
@@ -84,7 +90,7 @@ def handle_event():
     relay2.off()
     status.set("⚡ Röle2 KAPALI")
 
-    time.sleep(0.2)               # tampon
+    time.sleep(0.2)
     play_idle()
     with lock:
         playing_evt = False
@@ -94,7 +100,7 @@ def sensor_watcher():
     last = False
     while True:
         cur = pir.value
-        if cur and not last:                      # kenar tetikleme
+        if cur and not last:
             threading.Thread(target=handle_event, daemon=True).start()
         last = cur
         time.sleep(0.05)
@@ -110,7 +116,7 @@ status = tk.StringVar(value="⏳ Başlatılıyor…")
 tk.Label(root, textvariable=status,
          font=("DejaVu Sans", 16), fg="white", bg="black").pack(pady=30)
 
-# Escape tuşu → uygulamayı kapat
+# Escape tuşu → çıkış
 def on_close():
     stop_mpv()
     relay1.off(); relay2.off()
