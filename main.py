@@ -30,9 +30,10 @@ def mpv_start():
     if os.path.exists(SOCKET_PATH):
         os.remove(SOCKET_PATH)
     mpv_proc = subprocess.Popen([
-        MPV, str(VIDEO_IDLE), "--input-ipc-server=" + SOCKET_PATH,
+        MPV, str(VIDEO_IDLE),
+        "--input-ipc-server=" + SOCKET_PATH,
         "--fullscreen", "--no-border", "--ontop", "--force-window=yes",
-        "--loop", "--really-quiet"
+        "--loop", "--really-quiet", "--idle=yes"  # 👈 önemli eklendi
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def mpv_send(command: dict):
@@ -44,16 +45,11 @@ def mpv_send(command: dict):
         print(f"[mpv_send] Hata: {e}")
 
 def mpv_loadfile(path: Path, loop=False):
-    mpv_send({
-        "command": ["loadfile", str(path), "replace"]
-    })
-    mpv_send({
-        "command": ["set_property", "pause", False]
-    })
-    mpv_send({
-        "command": ["set_property", "loop", "inf" if loop else "no"]
-    })
-
+    mpv_send({ "command": ["loadfile", str(path), "replace"] })
+    mpv_send({ "command": ["set_property", "pause", False] })
+    mpv_send({ "command": ["set_property", "loop", "inf" if loop else "no"] })
+    if not loop:
+        mpv_send({ "command": ["set_property", "keep-open", "yes"] })  # 👈 bu eklendi
 
 def mpv_quit():
     mpv_send({ "command": ["quit"] })
