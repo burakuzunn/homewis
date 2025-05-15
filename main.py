@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
+import os
 import subprocess, threading, time, json, os
 from pathlib import Path
 from gpiozero import DigitalInputDevice, DigitalOutputDevice
 import socket, atexit
+os.system("pkill -f 'python3 /home/cmos/homewis/main.py'")
 
 # ─── Ayarlar ───
 BASE = Path("/home/cmos/Desktop")
