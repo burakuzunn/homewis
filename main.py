@@ -5,17 +5,19 @@ import subprocess, threading, time, tkinter as tk
 from pathlib import Path
 from gpiozero import DigitalInputDevice, DigitalOutputDevice
 
-# ───── PIN ve Video Ayarları ─────
-SENSOR_PIN = 17
-RELAY_PIN  = 27
-VIDEO_IDLE = "video1.mp4"
-VIDEO_EVT  = "video2.mp4"
-MPV_CMD    = "mpv"
+# ───── Dosya ve PIN Ayarları ─────
+BASE_PATH   = Path("/home/cmos/Desktop")
+VIDEO_IDLE  = BASE_PATH / "video1.mp4"
+VIDEO_EVT   = BASE_PATH / "video2.mp4"
+MPV_CMD     = "/usr/bin/mpv"  # Genellikle Raspberry Pi'de mpv bu dizindedir
 
-LOOP_ARGS  = ["--loop", "--fullscreen", "--no-border",
-              "--ontop", "--really-quiet", "--force-window=yes"]
-ONCE_ARGS  = ["--fullscreen", "--no-border",
-              "--ontop", "--really-quiet", "--force-window=yes"]
+SENSOR_PIN  = 17
+RELAY_PIN   = 27
+
+LOOP_ARGS = ["--loop", "--fullscreen", "--no-border",
+             "--ontop", "--really-quiet", "--force-window=yes"]
+ONCE_ARGS = ["--fullscreen", "--no-border",
+             "--ontop", "--really-quiet", "--force-window=yes"]
 
 # ───── Global Durumlar ─────
 status      = None
@@ -28,15 +30,15 @@ relay = DigitalOutputDevice(RELAY_PIN, active_high=True, initial_value=False)
 pir   = DigitalInputDevice(SENSOR_PIN, pull_up=False)
 
 # ▶ mpv video oynatıcı başlat
-def start_mpv(video: str, loop: bool):
+def start_mpv(video: Path, loop: bool):
     global mpv_proc
     stop_mpv()
     args = LOOP_ARGS if loop else ONCE_ARGS
-    if not Path(video).exists():
+    if not video.exists():
         print(f"[HATA] Video dosyası bulunamadı: {video}")
         return
     mpv_proc = subprocess.Popen(
-        [MPV_CMD, video, *args],
+        [MPV_CMD, str(video), *args],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT
     )
