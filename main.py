@@ -52,8 +52,10 @@ def mpv_stop():
     global mpv_proc
     if mpv_proc and mpv_proc.poll() is None:
         mpv_proc.terminate()
-        try: mpv_proc.wait(timeout=2)
-        except subprocess.TimeoutExpired: mpv_proc.kill()
+        try:
+            mpv_proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            mpv_proc.kill()
     mpv_proc = None
 
 # ─── Röle geçişi ───
@@ -102,7 +104,12 @@ root = tk.Tk()
 root.configure(bg="black")
 root.attributes("-fullscreen", True)
 root.attributes("-topmost", True)
-root.overrideredirect(True)  # pencere kenarlığını da gizle
+root.overrideredirect(True)
+
+# ekran çözünürlüğünü zorla ayarla (gizli alanlar kalmasın)
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
+root.geometry(f"{screen_width}x{screen_height}+0+0")
 
 def clean_exit(*_):
     mpv_stop()
