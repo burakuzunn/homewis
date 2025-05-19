@@ -22,20 +22,17 @@ VIDEO_EVT  = BASE / "video2.mp4"
 SND_HELLO = BASE / "hello.mp3"
 SND_MUSIC = BASE / "music.mp3"
 
-# mpv ve soket yolu
 MPV         = "/usr/bin/mpv"
 SOCKET_PATH = "/tmp/mpv-socket"
 
 GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22
 T_GAP = 0.10  # röle geçiş tamponu (sn)
 
-# ─── Yeni: zaman parametreleri ───
-# Röle açıldıktan sonra ne kadar süre açık kalsın?
-RELAY_ON_DURATION = 10
-# Röle kapandıktan sonra kaç saniye daha beklesin?
-RELAY_OFF_DELAY   = 10
+# ─── Zaman parametreleri ───
+RELAY_ON_DURATION = 10  # röle açıldıktan sonra ne kadar süre açık kalsın
+RELAY_OFF_DELAY   = 10  # röle kapandıktan sonra ne kadar beklesin
 
-# Röleler aktif-LOW
+# Röleler (aktif-LOW)
 relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)
 relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)
 
@@ -46,7 +43,16 @@ mpv_proc    = None
 playing_evt = False
 lock        = threading.Lock()
 
-# ─── mpv yardımcıları ───
+# ─── Audio proses yönetimi ───
+audio_procs = []
+def stop_all_audio():
+    global audio_procs
+    for p in audio_procs:
+        try: p.terminate()
+        except: pass
+    audio_procs = []
+
+# ─── mpv kontrol ───
 def mpv_start():
     global mpv_proc
     if os.path.exists(SOCKET_PATH):
@@ -54,52 +60,43 @@ def mpv_start():
     mpv_proc = subprocess.Popen([
         MPV, str(VIDEO_IDLE),
         f"--input-ipc-server={SOCKET_PATH}",
-        "--fullscreen", "--no-border", "--ontop",
-        "--force-window=yes", "--really-quiet", "--idle=yes"
+        "--fullscreen","--no-border","--ontop",
+        "--force-window=yes","--really-quiet","--idle=yes"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(30):
-        if os.path.exists(SOCKET_PATH):
-            break
+        if os.path.exists(SOCKET_PATH): break
         time.sleep(0.1)
 
 def mpv_send(cmd: dict):
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(SOCKET_PATH)
-            s.sendall((json.dumps(cmd) + "\n").encode())
+            s.sendall((json.dumps(cmd)+"\n").encode())
     except Exception as e:
         print("[mpv_send]", e)
 
 def mpv_load(path: Path, loop: bool):
-    mpv_send({"command": ["loadfile", str(path), "replace"]})
-    mpv_send({"command": ["set_property", "pause", False]})
-    mpv_send({"command": ["set_property", "loop", "inf" if loop else "no"]})
+    mpv_send({"command":["loadfile", str(path), "replace"]})
+    mpv_send({"command":["set_property","pause",False]})
+    mpv_send({"command":["set_property","loop", "inf" if loop else "no"]})
     if not loop:
-        mpv_send({"command": ["set_property", "keep-open", "yes"]})
+        mpv_send({"command":["set_property","keep-open","yes"]})
 
 def mpv_quit():
-    mpv_send({"command": ["quit"]})
+    mpv_send({"command":["quit"]})
 
-# ─── video süresi ───
 def duration(path: Path) -> float:
     try:
         out = subprocess.check_output([
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "json", str(path)
+            "ffprobe","-v","error",
+            "-show_entries","format=duration",
+            "-of","json", str(path)
         ], text=True)
         return float(json.loads(out)["format"]["duration"])
-    except Exception:
+    except:
         return 1.0
 
 LEN_EVT = duration(VIDEO_EVT)
-
-# ─── Röle geçişi ───
-def switch_relays(active: str):
-    if active == "R1":
-        relay2.off(); time.sleep(T_GAP); relay1.on()
-    else:  # "R2"
-        relay1.off(); time.sleep(T_GAP); relay2.on()
 
 # ─── Yardımcılar ───
 def send_notification(text: str):
@@ -110,16 +107,22 @@ def send_notification(text: str):
 
 def play_sound(file: Path):
     if file.exists():
-        subprocess.Popen([MPV, "--no-video", "--really-quiet", str(file)])
+        p = subprocess.Popen([MPV, "--no-video","--really-quiet", str(file)])
+        audio_procs.append(p)
     else:
         print("Ses dosyası bulunamadı:", file)
 
-# ─── Senaryo akışı ───
+# ─── Boş mod (idle) ───
 def idle_mode():
-    # idle moda döndüğümüzde sadece video1 açık kalsın
-    switch_relays("R1")
+    # 1) Durdurulması gereken her şeyi durdur
+    stop_all_audio()
+    # 2) Röleleri idle konumuna getir
+    relay1.on()   # R1 LOW (açık)
+    relay2.off()  # R2 HIGH (kapalı)
+    # 3) video1 oynat, loop
     mpv_load(VIDEO_IDLE, loop=True)
 
+# ─── Olay dizisi ───
 def event_sequence():
     global playing_evt
     with lock:
@@ -127,31 +130,30 @@ def event_sequence():
             return
         playing_evt = True
 
-    # 1) Olay videosunu başlat
+    # 1) İkinci videoyu başlat
     mpv_load(VIDEO_EVT, loop=False)
 
-    # 2) Röleyi aç
-    switch_relays("R2")
+    # 2) Röleyi aç (R2 LOW)
+    relay1.off(); time.sleep(T_GAP); relay2.on()
 
-    # 3) Bildirim gönder
-    try:
-        send_notification("Event started: playing video2")
-    except Exception as e:
-        print("Notification failed:", e)
+    # 3) Bildirim
+    try: send_notification("Event started: playing video2")
+    except Exception as e: print("Notif err:", e)
 
     # 4) Sesleri sırayla çal
     play_sound(SND_HELLO)
     time.sleep(duration(SND_HELLO))
     play_sound(SND_MUSIC)
 
-    # 5) RELAY_ON_DURATION kadar bekle, sonra röleyi kapat
+    # 5) Röleyi RELAY_ON_DURATION sonra kapat
     time.sleep(RELAY_ON_DURATION)
-    switch_relays("R1")
+    relay2.off(); time.sleep(T_GAP); relay1.on()
 
-    # 6) Ekstra RELAY_OFF_DELAY bekle (video zaten devam ediyor)
+    # 6) Röle kapalı halde RELAY_OFF_DELAY bekle
     time.sleep(RELAY_OFF_DELAY)
 
-    # 7) sadece flag'i sıfırla, idle_mode'a dönmüyoruz
+    # 7) Video2 bittiğinde, başa dön
+    idle_mode()
     playing_evt = False
 
 # ─── Sensör izleme ───
@@ -159,6 +161,7 @@ def sensor_loop():
     while True:
         if (not pir.is_active) and (not playing_evt):
             threading.Thread(target=event_sequence, daemon=True).start()
+            # sensör boşalana kadar bekle
             while not pir.is_active:
                 time.sleep(0.1)
         time.sleep(0.05)
@@ -166,10 +169,10 @@ def sensor_loop():
 # ─── Temiz çıkış ───
 def clean_exit():
     try:
+        stop_all_audio()
         relay1.off(); relay2.off()
         mpv_quit()
-        if os.path.exists(SOCKET_PATH):
-            os.remove(SOCKET_PATH)
+        if os.path.exists(SOCKET_PATH): os.remove(SOCKET_PATH)
     finally:
         exit(0)
 
@@ -180,7 +183,7 @@ mpv_start()
 idle_mode()
 threading.Thread(target=sensor_loop, daemon=True).start()
 
-# ESC ile çıkış (opsiyonel GUI)
+# ESC ile manuel çıkış (opsiyonel GUI)
 try:
     import tkinter as tk
     root = tk.Tk(); root.withdraw()
