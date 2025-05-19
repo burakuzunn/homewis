@@ -26,7 +26,7 @@ mpv_proc = None
 playing_evt = False
 lock = threading.Lock()
 
-# ─── mpv yardımcıları ───
+# ─── mpv yardımcıları ─── ref
 def mpv_start():
     global mpv_proc
     if os.path.exists(SOCKET_PATH):
