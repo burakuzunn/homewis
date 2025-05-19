@@ -29,8 +29,8 @@ GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22
 T_GAP = 0.10  # röle geçiş tamponu (sn)
 
 # ─── Zaman parametreleri ───
-RELAY_ON_DURATION = 10  # röle açıldıktan sonra ne kadar süre açık kalsın
-RELAY_OFF_DELAY   = 10  # röle kapandıktan sonra ne kadar beklesin
+RELAY_ON_DURATION = 8  # röle açıldıktan sonra ne kadar süre açık kalsın
+RELAY_OFF_DELAY   = 8  # röle kapandıktan sonra ne kadar beklesin
 
 # Röleler (aktif-LOW)
 relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)
