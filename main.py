@@ -96,8 +96,6 @@ def duration(path: Path) -> float:
     except:
         return 1.0
 
-LEN_EVT = duration(VIDEO_EVT)
-
 # ─── Yardımcılar ───
 def send_notification(text: str):
     token   = "<YOUR_TELEGRAM_BOT_TOKEN>"
@@ -114,12 +112,9 @@ def play_sound(file: Path):
 
 # ─── Boş mod (idle) ───
 def idle_mode():
-    # 1) Durdurulması gereken her şeyi durdur
     stop_all_audio()
-    # 2) Röleleri idle konumuna getir
-    relay1.on()   # R1 LOW (açık)
-    relay2.off()  # R2 HIGH (kapalı)
-    # 3) video1 oynat, loop
+    relay1.on()    # R1 LOW (açık)
+    relay2.off()   # R2 HIGH (kapalı)
     mpv_load(VIDEO_IDLE, loop=True)
 
 # ─── Olay dizisi ───
@@ -133,26 +128,28 @@ def event_sequence():
     # 1) İkinci videoyu başlat
     mpv_load(VIDEO_EVT, loop=False)
 
-    # 2) Röleyi aç (R2 LOW)
+    # 2) HELLO sesini hemen çal
+    play_sound(SND_HELLO)
+
+    # 3) Röleyi aç (R2 LOW)
     relay1.off(); time.sleep(T_GAP); relay2.on()
 
-    # 3) Bildirim
+    # 4) Bildirim
     try: send_notification("Event started: playing video2")
     except Exception as e: print("Notif err:", e)
 
-    # 4) Sesleri sırayla çal
-    play_sound(SND_HELLO)
+    # 5) MUSIC sesini, HELLO tamamlandıktan sonra çal
     time.sleep(duration(SND_HELLO))
     play_sound(SND_MUSIC)
 
-    # 5) Röleyi RELAY_ON_DURATION sonra kapat
+    # 6) Röleyi RELAY_ON_DURATION sonra kapat
     time.sleep(RELAY_ON_DURATION)
     relay2.off(); time.sleep(T_GAP); relay1.on()
 
-    # 6) Röle kapalı halde RELAY_OFF_DELAY bekle
+    # 7) Röle kapandıktan sonra RELAY_OFF_DELAY bekle
     time.sleep(RELAY_OFF_DELAY)
 
-    # 7) Video2 bittiğinde, başa dön
+    # 8) İşlem bitince idle moda dön
     idle_mode()
     playing_evt = False
 
@@ -161,7 +158,6 @@ def sensor_loop():
     while True:
         if (not pir.is_active) and (not playing_evt):
             threading.Thread(target=event_sequence, daemon=True).start()
-            # sensör boşalana kadar bekle
             while not pir.is_active:
                 time.sleep(0.1)
         time.sleep(0.05)
@@ -183,7 +179,7 @@ mpv_start()
 idle_mode()
 threading.Thread(target=sensor_loop, daemon=True).start()
 
-# ESC ile manuel çıkış (opsiyonel GUI)
+# ESC ile manuel çıkış
 try:
     import tkinter as tk
     root = tk.Tk(); root.withdraw()
