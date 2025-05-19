@@ -10,7 +10,7 @@ import socket
 import atexit
 from pathlib import Path
 
-import requests                     # for send_notification()
+import requests
 from gpiozero import DigitalInputDevice, DigitalOutputDevice
 
 # ─── Ayarlar ───
@@ -18,26 +18,26 @@ BASE = Path("/home/cmos/Desktop")
 VIDEO_IDLE = BASE / "video1.mp4"
 VIDEO_EVT  = BASE / "video2.mp4"
 
-# Ses dosyaları (aynı klasörde hello.mp3 ve music.mp3 olsun)
+# Ses dosyaları
 SND_HELLO = BASE / "hello.mp3"
 SND_MUSIC = BASE / "music.mp3"
 
-MPV = "/usr/bin/mpv"
+MPV         = "/usr/bin/mpv"
 SOCKET_PATH = "/tmp/mpv-socket"
 
-GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22      # BCM numaraları
-T_GAP = 0.10                                    # röle geçiş tamponu (sn)
+GPIO_SENSOR, GPIO_R1, GPIO_R2 = 17, 27, 22   # BCM numaraları
+T_GAP = 0.10                                 # röle geçiş tamponu (sn)
 
 # Röleler aktif-LOW
-relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)  # LOW = çekik (açık)
-relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)   # HIGH = serbest (kapalı)
+relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)
+relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)
 
 # PIR: “hareket yok = HIGH”, “hareket var = LOW”
 pir = DigitalInputDevice(GPIO_SENSOR, pull_up=False)
 
-mpv_proc = None
+mpv_proc    = None
 playing_evt = False
-lock = threading.Lock()
+lock        = threading.Lock()
 
 # ─── mpv yardımcıları ───
 def mpv_start():
@@ -50,8 +50,7 @@ def mpv_start():
         "--fullscreen", "--no-border", "--ontop",
         "--force-window=yes", "--really-quiet", "--idle=yes"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    # socket hazır olana kadar bekle (≤3 s)
+    # socket hazır olana kadar bekle
     for _ in range(30):
         if os.path.exists(SOCKET_PATH):
             break
@@ -78,11 +77,11 @@ def mpv_quit():
 # ─── video süresi ───
 def duration(path: Path) -> float:
     try:
-        out = subprocess.check_output(
-            ["ffprobe", "-v", "error",
-             "-show_entries", "format=duration",
-             "-of", "json", str(path)],
-            text=True)
+        out = subprocess.check_output([
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "json", str(path)
+        ], text=True)
         return float(json.loads(out)["format"]["duration"])
     except Exception:
         return 1.0
@@ -91,36 +90,28 @@ LEN_EVT = duration(VIDEO_EVT)
 
 # ─── Röle geçişi ───
 def switch_relays(active: str):
-    if active == "R1":                               # video-1 süresince
+    if active == "R1":
         relay2.off(); time.sleep(T_GAP); relay1.on()
-    else:                                            # video-2 + 10 sn
+    else:
         relay1.off(); time.sleep(T_GAP); relay2.on()
 
 # ─── Yardımcılar ───
 def send_notification(text: str):
-    """
-    Örnek: Telegram Bot API kullanarak mesaj gönderme.
-    Token ve chat_id değerlerini kendinize göre ayarlayın.
-    """
-    token = "<YOUR_TELEGRAM_BOT_TOKEN>"
+    token   = "<YOUR_TELEGRAM_BOT_TOKEN>"
     chat_id = "<CHAT_ID>"
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    url     = f"https://api.telegram.org/bot{token}/sendMessage"
     requests.post(url, data={"chat_id": chat_id, "text": text})
 
-def play_sound_sequence(files):
-    """
-    Dosyaları sırayla oynatır (bloklayarak).
-    mpv kullanıyor; başka bir kütüphane tercih ederseniz değiştirebilirsiniz.
-    """
-    for f in files:
-        if f.exists():
-            subprocess.run([MPV, "--no-video", "--really-quiet", str(f)])
-        else:
-            print("Ses dosyası bulunamadı:", f)
+def play_sound(file: Path):
+    if file.exists():
+        # ayrı mpv süreciyle sadece ses çal, video devam eder
+        subprocess.Popen([MPV, "--no-video", "--really-quiet", str(file)])
+    else:
+        print("Ses dosyası bulunamadı:", file)
 
 # ─── Senaryo akışı ───
 def idle_mode():
-    switch_relays("R1")              # R1 LOW, R2 HIGH
+    switch_relays("R1")
     mpv_load(VIDEO_IDLE, loop=True)
 
 def event_sequence():
@@ -130,35 +121,40 @@ def event_sequence():
             return
         playing_evt = True
 
-    # 1) Etkinlik başladığında hemen mesaj gönder
+    # 1) Olay videosunu başlat
+    mpv_load(VIDEO_EVT, loop=False)
+
+    # 2) Röleyi hemen aktifleştir
+    switch_relays("R2")
+
+    # 3) Bildirim gönder
     try:
         send_notification("Event started: playing video2")
     except Exception as e:
         print("Notification failed:", e)
 
-    # 2) İki ses dosyasını sırayla çal
-    play_sound_sequence([SND_HELLO, SND_MUSIC])
+    # 4) Ses dosyalarını sırayla çal
+    play_sound(SND_HELLO)
+    # hello.mp3 süresi kadar bekle ki mesaj art arda gelsin
+    time.sleep(duration(SND_HELLO))
+    play_sound(SND_MUSIC)
 
-    # 3) Olay videosunu başlat
-    mpv_load(VIDEO_EVT, loop=False)
-    time.sleep(LEN_EVT)              # video-2 süresi
+    # 5) Video süresi kadar bekle
+    time.sleep(LEN_EVT)
 
-    # 4) Röle2'yi 10 saniye aktif et
-    switch_relays("R2")
+    # 6) 10 sn sonra idle moda dön
     time.sleep(10)
-
-    # 5) Yeniden boş moduna dön
     idle_mode()
+
     with lock:
         playing_evt = False
 
 # ─── Sensör izleme ───
 def sensor_loop():
     while True:
-        # LOW = hareket var, ve henüz oynatılmıyorsa
         if (not pir.is_active) and (not playing_evt):
             threading.Thread(target=event_sequence, daemon=True).start()
-            # kişi sensör alanındayken yeniden tetikleme yapma
+            # sensör boşalana kadar bekle
             while not pir.is_active:
                 time.sleep(0.1)
         time.sleep(0.05)
@@ -180,11 +176,10 @@ mpv_start()
 idle_mode()
 threading.Thread(target=sensor_loop, daemon=True).start()
 
-# ESC ile çıkış (isteğe bağlı GUI)
+# ESC ile manuel çıkış (isteğe bağlı GUI)
 try:
     import tkinter as tk
-    root = tk.Tk()
-    root.withdraw()
+    root = tk.Tk(); root.withdraw()
     root.bind("<Escape>", lambda *_: clean_exit())
     root.mainloop()
 except:
