@@ -48,10 +48,8 @@ audio_procs = []
 def stop_all_audio():
     global audio_procs
     for p in audio_procs:
-        try:
-            p.terminate()
-        except:
-            pass
+        try: p.terminate()
+        except: pass
     audio_procs = []
 
 # ─── mpv kontrol ───
@@ -62,38 +60,37 @@ def mpv_start():
     mpv_proc = subprocess.Popen([
         MPV, str(VIDEO_IDLE),
         f"--input-ipc-server={SOCKET_PATH}",
-        "--fullscreen", "--no-border", "--ontop",
-        "--force-window=yes", "--really-quiet", "--idle=yes"
+        "--fullscreen","--no-border","--ontop",
+        "--force-window=yes","--really-quiet","--idle=yes"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(30):
-        if os.path.exists(SOCKET_PATH):
-            break
+        if os.path.exists(SOCKET_PATH): break
         time.sleep(0.1)
 
 def mpv_send(cmd: dict):
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(SOCKET_PATH)
-            s.sendall((json.dumps(cmd) + "\n").encode())
+            s.sendall((json.dumps(cmd)+"\n").encode())
     except Exception as e:
         print("[mpv_send]", e)
 
 def mpv_load(path: Path, loop: bool):
-    mpv_send({"command": ["loadfile", str(path), "replace"]})
-    mpv_send({"command": ["set_property", "pause", False]})
-    mpv_send({"command": ["set_property", "loop", "inf" if loop else "no"]})
+    mpv_send({"command":["loadfile", str(path), "replace"]})
+    mpv_send({"command":["set_property","pause",False]})
+    mpv_send({"command":["set_property","loop", "inf" if loop else "no"]})
     if not loop:
-        mpv_send({"command": ["set_property", "keep-open", "yes"]})
+        mpv_send({"command":["set_property","keep-open","yes"]})
 
 def mpv_quit():
-    mpv_send({"command": ["quit"]})
+    mpv_send({"command":["quit"]})
 
 def duration(path: Path) -> float:
     try:
         out = subprocess.check_output([
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "json", str(path)
+            "ffprobe","-v","error",
+            "-show_entries","format=duration",
+            "-of","json", str(path)
         ], text=True)
         return float(json.loads(out)["format"]["duration"])
     except:
@@ -110,16 +107,19 @@ def send_notification(text: str):
 
 def play_sound(file: Path):
     if file.exists():
-        p = subprocess.Popen([MPV, "--no-video", "--really-quiet", str(file)])
+        p = subprocess.Popen([MPV, "--no-video","--really-quiet", str(file)])
         audio_procs.append(p)
     else:
         print("Ses dosyası bulunamadı:", file)
 
 # ─── Boş mod (idle) ───
 def idle_mode():
+    # 1) Durdurulması gereken her şeyi durdur
     stop_all_audio()
-    relay1.on()    # R1 LOW (açık)
-    relay2.off()   # R2 HIGH (kapalı)
+    # 2) Röleleri idle konumuna getir
+    relay1.on()   # R1 LOW (açık)
+    relay2.off()  # R2 HIGH (kapalı)
+    # 3) video1 oynat, loop
     mpv_load(VIDEO_IDLE, loop=True)
 
 # ─── Olay dizisi ───
@@ -130,28 +130,29 @@ def event_sequence():
             return
         playing_evt = True
 
-    start_time = time.time()
+    # 1) İkinci videoyu başlat
     mpv_load(VIDEO_EVT, loop=False)
 
+    # 2) Röleyi aç (R2 LOW)
     relay1.off(); time.sleep(T_GAP); relay2.on()
-    try:
-        send_notification("Event started: playing video2")
-    except Exception as e:
-        print("Notif err:", e)
 
+    # 3) Bildirim
+    try: send_notification("Event started: playing video2")
+    except Exception as e: print("Notif err:", e)
+
+    # 4) Sesleri sırayla çal
     play_sound(SND_HELLO)
     time.sleep(duration(SND_HELLO))
     play_sound(SND_MUSIC)
 
+    # 5) Röleyi RELAY_ON_DURATION sonra kapat
     time.sleep(RELAY_ON_DURATION)
     relay2.off(); time.sleep(T_GAP); relay1.on()
 
+    # 6) Röle kapalı halde RELAY_OFF_DELAY bekle
     time.sleep(RELAY_OFF_DELAY)
 
-    elapsed = time.time() - start_time
-    if elapsed < LEN_EVT:
-        time.sleep(LEN_EVT - elapsed)
-
+    # 7) Video2 bittiğinde, başa dön
     idle_mode()
     playing_evt = False
 
@@ -160,6 +161,7 @@ def sensor_loop():
     while True:
         if (not pir.is_active) and (not playing_evt):
             threading.Thread(target=event_sequence, daemon=True).start()
+            # sensör boşalana kadar bekle
             while not pir.is_active:
                 time.sleep(0.1)
         time.sleep(0.05)
@@ -170,8 +172,7 @@ def clean_exit():
         stop_all_audio()
         relay1.off(); relay2.off()
         mpv_quit()
-        if os.path.exists(SOCKET_PATH):
-            os.remove(SOCKET_PATH)
+        if os.path.exists(SOCKET_PATH): os.remove(SOCKET_PATH)
     finally:
         exit(0)
 
