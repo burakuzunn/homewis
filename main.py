@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import subprocess, threading, time, json, os, socket, atexit
+import subprocess
+import threading
+import time
+import json
+import os
+import socket
+import atexit
 from pathlib import Path
+
+import requests                     # for send_notification()
 from gpiozero import DigitalInputDevice, DigitalOutputDevice
 
 # ─── Ayarlar ───
 BASE = Path("/home/cmos/Desktop")
 VIDEO_IDLE = BASE / "video1.mp4"
 VIDEO_EVT  = BASE / "video2.mp4"
+
+# Ses dosyaları (aynı klasörde hello.mp3 ve music.mp3 olsun)
+SND_HELLO = BASE / "hello.mp3"
+SND_MUSIC = BASE / "music.mp3"
+
 MPV = "/usr/bin/mpv"
 SOCKET_PATH = "/tmp/mpv-socket"
 
@@ -20,13 +33,13 @@ relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)  #
 relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)   # HIGH = serbest (kapalı)
 
 # PIR: “hareket yok = HIGH”, “hareket var = LOW”
-pir = DigitalInputDevice(GPIO_SENSOR, pull_up=False)  # bounce süzgeci gerekmez
+pir = DigitalInputDevice(GPIO_SENSOR, pull_up=False)
 
 mpv_proc = None
 playing_evt = False
 lock = threading.Lock()
 
-# ─── mpv yardımcıları ─── ref
+# ─── mpv yardımcıları ───
 def mpv_start():
     global mpv_proc
     if os.path.exists(SOCKET_PATH):
@@ -83,6 +96,28 @@ def switch_relays(active: str):
     else:                                            # video-2 + 10 sn
         relay1.off(); time.sleep(T_GAP); relay2.on()
 
+# ─── Yardımcılar ───
+def send_notification(text: str):
+    """
+    Örnek: Telegram Bot API kullanarak mesaj gönderme.
+    Token ve chat_id değerlerini kendinize göre ayarlayın.
+    """
+    token = "<YOUR_TELEGRAM_BOT_TOKEN>"
+    chat_id = "<CHAT_ID>"
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    requests.post(url, data={"chat_id": chat_id, "text": text})
+
+def play_sound_sequence(files):
+    """
+    Dosyaları sırayla oynatır (bloklayarak).
+    mpv kullanıyor; başka bir kütüphane tercih ederseniz değiştirebilirsiniz.
+    """
+    for f in files:
+        if f.exists():
+            subprocess.run([MPV, "--no-video", "--really-quiet", str(f)])
+        else:
+            print("Ses dosyası bulunamadı:", f)
+
 # ─── Senaryo akışı ───
 def idle_mode():
     switch_relays("R1")              # R1 LOW, R2 HIGH
@@ -95,20 +130,33 @@ def event_sequence():
             return
         playing_evt = True
 
+    # 1) Etkinlik başladığında hemen mesaj gönder
+    try:
+        send_notification("Event started: playing video2")
+    except Exception as e:
+        print("Notification failed:", e)
+
+    # 2) İki ses dosyasını sırayla çal
+    play_sound_sequence([SND_HELLO, SND_MUSIC])
+
+    # 3) Olay videosunu başlat
     mpv_load(VIDEO_EVT, loop=False)
     time.sleep(LEN_EVT)              # video-2 süresi
 
-    switch_relays("R2")              # R2 LOW
-    time.sleep(10)                   # 10 sn röle-2
+    # 4) Röle2'yi 10 saniye aktif et
+    switch_relays("R2")
+    time.sleep(10)
 
-    idle_mode()                      # tekrar döngü
+    # 5) Yeniden boş moduna dön
+    idle_mode()
     with lock:
         playing_evt = False
 
 # ─── Sensör izleme ───
 def sensor_loop():
     while True:
-        if (not pir.is_active) and (not playing_evt):   # LOW = hareket var
+        # LOW = hareket var, ve henüz oynatılmıyorsa
+        if (not pir.is_active) and (not playing_evt):
             threading.Thread(target=event_sequence, daemon=True).start()
             # kişi sensör alanındayken yeniden tetikleme yapma
             while not pir.is_active:
@@ -132,7 +180,7 @@ mpv_start()
 idle_mode()
 threading.Thread(target=sensor_loop, daemon=True).start()
 
-# ESC ile çıkış (isteğe bağlı)
+# ESC ile çıkış (isteğe bağlı GUI)
 try:
     import tkinter as tk
     root = tk.Tk()
