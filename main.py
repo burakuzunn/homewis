@@ -39,6 +39,18 @@ mpv_proc    = None
 playing_evt = False
 lock        = threading.Lock()
 
+# ─── SES PROSESLERİNİ YÖNET ───
+audio_procs = []  # burada Popen nesnelerini saklayacağız
+
+def stop_all_audio():
+    global audio_procs
+    for p in audio_procs:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    audio_procs = []
+
 # ─── mpv yardımcıları ───
 def mpv_start():
     global mpv_proc
@@ -50,7 +62,6 @@ def mpv_start():
         "--fullscreen", "--no-border", "--ontop",
         "--force-window=yes", "--really-quiet", "--idle=yes"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # socket hazır olana kadar bekle
     for _ in range(30):
         if os.path.exists(SOCKET_PATH):
             break
@@ -104,13 +115,16 @@ def send_notification(text: str):
 
 def play_sound(file: Path):
     if file.exists():
-        # ayrı mpv süreciyle sadece ses çal, video devam eder
-        subprocess.Popen([MPV, "--no-video", "--really-quiet", str(file)])
+        p = subprocess.Popen([MPV, "--no-video", "--really-quiet", str(file)])
+        audio_procs.append(p)
     else:
         print("Ses dosyası bulunamadı:", file)
 
 # ─── Senaryo akışı ───
 def idle_mode():
+    # önce çalan tüm sesleri kapat
+    stop_all_audio()
+
     switch_relays("R1")
     mpv_load(VIDEO_IDLE, loop=True)
 
@@ -135,14 +149,13 @@ def event_sequence():
 
     # 4) Ses dosyalarını sırayla çal
     play_sound(SND_HELLO)
-    # hello.mp3 süresi kadar bekle ki mesaj art arda gelsin
     time.sleep(duration(SND_HELLO))
     play_sound(SND_MUSIC)
 
     # 5) Video süresi kadar bekle
     time.sleep(LEN_EVT)
 
-    # 6) 10 sn sonra idle moda dön
+    # 6) 10 sn bekle, sonra idle moda dön
     time.sleep(10)
     idle_mode()
 
@@ -154,7 +167,6 @@ def sensor_loop():
     while True:
         if (not pir.is_active) and (not playing_evt):
             threading.Thread(target=event_sequence, daemon=True).start()
-            # sensör boşalana kadar bekle
             while not pir.is_active:
                 time.sleep(0.1)
         time.sleep(0.05)
@@ -162,6 +174,8 @@ def sensor_loop():
 # ─── Temiz çıkış ───
 def clean_exit():
     try:
+        # videoyu ve sesleri kapat
+        stop_all_audio()
         relay1.off(); relay2.off()
         mpv_quit()
         if os.path.exists(SOCKET_PATH):
