@@ -8,10 +8,10 @@ Lütfen aşağıdaki adımları sırasıyla terminal üzerinde çalıştırarak 
 ---
 
 ### ADIM 1: Gerekli Paketlerin Kurulumu
-Aşağıdaki komutları çalıştırarak depo önbelleğini güncelle ve bağımlılıkları (`mpv`, `ffmpeg`, `gpiozero`) kur:
+Aşağıdaki komutları çalıştırarak depo önbelleğini güncelle ve bağımlılıkları (`mpv`, `ffmpeg`, `gpiozero`, `mpg123`) kur:
 ```bash
 sudo apt update
-sudo apt install -y mpv ffmpeg python3-gpiozero
+sudo apt install -y mpv ffmpeg python3-gpiozero mpg123
 ```
 
 ### ADIM 2: Dizin Kontrolü ve Dosyaların Konumlandırılması
