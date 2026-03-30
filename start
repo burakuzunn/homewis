@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE="homewis-kiosk.service"
+SOCKET="/tmp/mpv-socket"
+
+echo "[homewis] Eski surecler temizleniyor..."
+sudo pkill -f "/home/cmos/Desktop/homewis/main.py" 2>/dev/null || true
+sudo pkill -f "/usr/bin/mpv .*--input-ipc-server=${SOCKET}" 2>/dev/null || true
+sudo pkill -x mpg123 2>/dev/null || true
+sudo rm -f "${SOCKET}" 2>/dev/null || true
+
+echo "[homewis] ${SERVICE} yeniden baslatiliyor..."
+sudo systemctl restart "${SERVICE}"
+
+echo "[homewis] Servis durumu:"
+systemctl --no-pager --full status "${SERVICE}" | sed -n '1,18p'
