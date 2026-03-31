@@ -41,10 +41,11 @@ RELAY_ON_DURATION = 8  # röle açıldıktan sonra ne kadar süre açık kalsın
 RELAY_OFF_DELAY   = 8  # röle kapandıktan sonra ne kadar beklesin
 
 # Röleler (aktif-LOW)
+# Boot anında istenmeyen tetiklemeyi azaltmak için hepsini OFF başlat.
 relay1 = DigitalOutputDevice(GPIO_R1, active_high=False, initial_value=False)
-relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=True)
-relay3 = DigitalOutputDevice(GPIO_R3, active_high=False, initial_value=True)
-relay4 = DigitalOutputDevice(GPIO_R4, active_high=False, initial_value=True)
+relay2 = DigitalOutputDevice(GPIO_R2, active_high=False, initial_value=False)
+relay3 = DigitalOutputDevice(GPIO_R3, active_high=False, initial_value=False)
+relay4 = DigitalOutputDevice(GPIO_R4, active_high=False, initial_value=False)
 
 # PIR: hareket yok = HIGH, hareket var = LOW
 pir = DigitalInputDevice(GPIO_SENSOR, pull_up=False)

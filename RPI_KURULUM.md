@@ -126,6 +126,16 @@ Role guvenlik mantigi:
 - Her geciste once hepsi kapanir, kisa bekleme (`T_GAP`) sonra hedef grup acilir
 
 > Donanim notu: role kartin pin baglantin farkliysa sadece `GPIO_R1..GPIO_R4` degerlerini degistir.
+>
+> Boot guvenligi (onerilir): role karti aktif-LOW oldugu icin acilista bu pinleri HIGH tut.
+> `/boot/firmware/config.txt` (bazi sistemlerde `/boot/config.txt`) sonuna ekle:
+> ```ini
+> gpio=22,23,24,27=op,dh
+> ```
+> `dh` = drive high (role OFF). Sonra reboot:
+> ```bash
+> sudo reboot
+> ```
 
 ---
 
